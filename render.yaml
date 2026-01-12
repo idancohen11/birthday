@@ -1,0 +1,28 @@
+# Render Blueprint - Birthday Bot
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: worker
+    name: birthday-bot
+    runtime: node
+    plan: starter  # $7/month
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false  # Set manually in Render dashboard
+      - key: TARGET_GROUP_ID
+        value: "972542126685-1392148476@g.us"  # The Premiums
+      - key: DRY_RUN
+        value: "false"  # Live mode in production
+      - key: RESPONSE_DELAY_MIN
+        value: "30000"  # 30 seconds
+      - key: RESPONSE_DELAY_MAX
+        value: "180000"  # 3 minutes
+      - key: LOG_LEVEL
+        value: "info"
+    disk:
+      name: whatsapp-session
+      mountPath: /opt/render/project/src/session
+      sizeGB: 1  # For WhatsApp session persistence
+
