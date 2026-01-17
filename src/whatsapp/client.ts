@@ -34,7 +34,7 @@ export async function initializeWhatsApp(): Promise<WASocket> {
     logger: silentLogger,
     browser: ['Birthday Bot', 'Chrome', '120.0.0'],
     syncFullHistory: false,
-    markOnlineOnConnect: true,
+    markOnlineOnConnect: false,  // Don't show as "online"
     getMessage: async () => ({ conversation: '' }),
   });
 
@@ -59,6 +59,8 @@ export async function initializeWhatsApp(): Promise<WASocket> {
       }
     } else if (connection === 'open') {
       console.log('✅ WhatsApp connected and ready!\n');
+      // Set presence to offline/unavailable
+      await socket?.sendPresenceUpdate('unavailable');
     }
   });
 
