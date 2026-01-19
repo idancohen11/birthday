@@ -16,18 +16,21 @@ export async function generateBirthdayMessage(
   name: string,
   apiKey: string,
   model: string = 'gpt-4o-mini',
-  preferredLanguage: 'he' | 'en' | 'mixed' = 'mixed'
+  preferredLanguage: 'he' | 'en' | 'mixed' = 'he' // Default to Hebrew
 ): Promise<GeneratedMessage> {
   const client = getClient(apiKey);
   
-  // Add some randomness to language preference
-  const languageChoice = preferredLanguage === 'mixed' 
-    ? (Math.random() > 0.3 ? 'Hebrew' : 'English')  // 70% Hebrew, 30% English
-    : (preferredLanguage === 'he' ? 'Hebrew' : 'English');
+  // Clean up name - remove @ prefix if present, remove phone number patterns
+  const cleanName = name
+    .replace(/^@/, '')
+    .replace(/^\+?\d{10,}$/, '') // Remove if it's just a phone number
+    .trim();
+  
+  // If name is empty or just a phone number, use a generic greeting
+  const finalName = cleanName || 'חבר/ה';
   
   const userPrompt = GENERATION_USER_PROMPT
-    .replace('{name}', name)
-    .replace('{language}', languageChoice);
+    .replace('{name}', finalName);
   
   try {
     const response = await client.chat.completions.create({
@@ -37,7 +40,7 @@ export async function generateBirthdayMessage(
         { role: 'user', content: userPrompt },
       ],
       temperature: 0.9, // Higher temperature for variety
-      max_tokens: 100,
+      max_tokens: 200, // Increased for longer messages + disclaimer
     });
 
     const content = response.choices[0]?.message?.content?.trim();
@@ -65,16 +68,16 @@ export async function generateBirthdayMessage(
   } catch (error) {
     logger.error('Message generation failed', { error, name });
     
-    // Fallback messages
+    // Fallback messages (Hebrew only)
     const fallbacks = [
-      `יום הולדת שמח ${name}! 🎂`,
-      `Happy birthday ${name}! 🎉`,
-      `מזל טוב ${name}! 🎈`,
+      `יום הולדת שמח ${finalName}! 🎂\n\nגילוי נאות: אני בוט שעידן כתב לזיהוי הודעות יום הולדת 🤖 אני עדיין בשלבי הרצה אז תהיו סלחנים אליי`,
+      `מזל טוב ${finalName}! 🎈\n\nגילוי נאות: אני בוט שעידן כתב לזיהוי הודעות יום הולדת 🤖 אני עדיין בשלבי הרצה אז תהיו סלחנים אליי`,
+      `${finalName}, יאללה מזל טוב! 🥳\n\nגילוי נאות: אני בוט שעידן כתב לזיהוי הודעות יום הולדת 🤖 אני עדיין בשלבי הרצה אז תהיו סלחנים אליי`,
     ];
     
     return {
       message: fallbacks[Math.floor(Math.random() * fallbacks.length)],
-      language: 'mixed',
+      language: 'he',
     };
   }
 }
