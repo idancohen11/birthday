@@ -16,17 +16,29 @@ const CONTEXT_EXPIRY_MINUTES = 720;
 // Store recent messages per group for context
 const recentMessagesCache = new Map<string, { text: string; timestamp: number }[]>();
 
-// Track how many times we've wished each person TODAY (persisted to file)
+// Track birthday wishes TODAY (persisted to file)
 const BIRTHDAY_WISHES_FILE = path.join(process.cwd(), 'data', 'today_wishes.json');
-const MAX_WISHES_PER_PERSON = 2; // Allow wishing up to 2 times per person per day
+const MAX_WISHES_PER_GROUP_PER_DAY = 2; // Allow 2 birthday messages per day (for rare cases of 2 birthdays)
 
 interface TodayWishes {
   date: string; // YYYY-MM-DD
-  wishes: Record<string, Record<string, number>>; // groupId -> { normalizedName -> count }
+  wishCount: Record<string, number>; // groupId -> total wishes sent today
+  wishedNames: Record<string, string[]>; // groupId -> names we've wished (for logging)
 }
 
 function getTodayString(): string {
-  return new Date().toISOString().split('T')[0];
+  // Use 2:00 AM as the day boundary (for late-night messages)
+  const now = new Date();
+  const hour = now.getHours();
+  
+  // If it's before 2 AM, consider it still "yesterday"
+  if (hour < 2) {
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    return yesterday.toISOString().split('T')[0];
+  }
+  
+  return now.toISOString().split('T')[0];
 }
 
 function loadTodayWishes(): TodayWishes {
@@ -36,14 +48,17 @@ function loadTodayWishes(): TodayWishes {
       // Reset if it's a new day
       if (data.date !== getTodayString()) {
         console.log('📅 New day detected, resetting wish tracking');
-        return { date: getTodayString(), wishes: {} };
+        return { date: getTodayString(), wishCount: {}, wishedNames: {} };
       }
+      // Ensure fields exist (for backwards compatibility)
+      if (!data.wishCount) data.wishCount = {};
+      if (!data.wishedNames) data.wishedNames = {};
       return data;
     }
   } catch (e) {
     console.error('Error loading wishes file:', e);
   }
-  return { date: getTodayString(), wishes: {} };
+  return { date: getTodayString(), wishCount: {}, wishedNames: {} };
 }
 
 function saveTodayWishes(data: TodayWishes): void {
@@ -58,45 +73,52 @@ function saveTodayWishes(data: TodayWishes): void {
   }
 }
 
-function normalizeName(name: string): string {
-  // Normalize Hebrew/English names for comparison
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/^(ל|ה)/, '') // Remove Hebrew prefixes ל, ה
-    .replace(/[!.,🎂🎉🎈🥳🎁]/g, ''); // Remove punctuation and emojis
-}
-
-function getWishCount(groupId: string, name: string): number {
+function getGroupWishCount(groupId: string): number {
   const data = loadTodayWishes();
-  const normalizedName = normalizeName(name);
-  return data.wishes[groupId]?.[normalizedName] || 0;
+  return data.wishCount[groupId] || 0;
 }
 
-function canWishPerson(groupId: string, name: string): boolean {
-  return getWishCount(groupId, name) < MAX_WISHES_PER_PERSON;
+function canSendBirthdayWish(groupId: string): boolean {
+  return getGroupWishCount(groupId) < MAX_WISHES_PER_GROUP_PER_DAY;
+}
+
+function getWishedNames(groupId: string): string[] {
+  const data = loadTodayWishes();
+  return data.wishedNames[groupId] || [];
+}
+
+// Detect if message indicates an ADDITIONAL birthday (second person)
+// These phrases signal "there's another birthday today"
+function isAdditionalBirthdayMessage(message: string): boolean {
+  const additionalPatterns = [
+    /וגם\s*(מזל טוב|יום הולדת|birthday)/i,
+    /ובנוסף\s*(מזל טוב|יום הולדת)/i,
+    /גם\s*היום\s*יום הולדת/i,
+    /עוד\s*יום הולדת/i,
+    /יום הולדת\s*נוסף/i,
+    /and\s*also\s*(happy\s*)?birthday/i,
+    /another\s*birthday/i,
+    /בנוסף.*יום הולדת/i,
+    /יום הולדת.*בנוסף/i,
+  ];
+  
+  return additionalPatterns.some(pattern => pattern.test(message));
 }
 
 function recordWish(groupId: string, name: string): void {
   const data = loadTodayWishes();
-  const normalizedName = normalizeName(name);
   
-  if (!data.wishes[groupId]) {
-    data.wishes[groupId] = {};
+  // Increment count for group
+  data.wishCount[groupId] = (data.wishCount[groupId] || 0) + 1;
+  
+  // Track the name (for logging purposes)
+  if (!data.wishedNames[groupId]) {
+    data.wishedNames[groupId] = [];
   }
+  data.wishedNames[groupId].push(name);
   
-  const currentCount = data.wishes[groupId][normalizedName] || 0;
-  data.wishes[groupId][normalizedName] = currentCount + 1;
-  
-  console.log(`📝 Recorded wish #${currentCount + 1} for "${name}" (normalized: "${normalizedName}")`);
+  console.log(`📝 Recorded wish for "${name}" (total today: ${data.wishCount[groupId]}/${MAX_WISHES_PER_GROUP_PER_DAY})`);
   saveTodayWishes(data);
-}
-
-// Keep track of detected birthday names (for context, not for limiting)
-function recordBirthdayName(groupId: string, name: string): void {
-  // This just logs for context, actual wish limiting is done by recordWish/canWishPerson
-  const normalizedName = normalizeName(name);
-  console.log(`📝 Detected birthday for "${name}" (normalized: "${normalizedName}")`);
 }
 
 function cleanExpiredMessages(groupId: string) {
@@ -216,9 +238,9 @@ export async function handleMessage(message: proto.IWebMessageInfo): Promise<voi
       return;
     }
 
-    // Record the birthday name if detected (even for follow-ups)
+    // Log the birthday name if detected (even for follow-ups)
     if (classification.birthdayPersonName) {
-      recordBirthdayName(groupId, classification.birthdayPersonName);
+      console.log(`📝 HANDLER: Detected birthday for "${classification.birthdayPersonName}"`);
     }
 
     // Not an initial wish (it's a follow-up)
@@ -241,13 +263,30 @@ export async function handleMessage(message: proto.IWebMessageInfo): Promise<voi
 
     console.log(`🎉 HANDLER: Valid birthday wish detected for "${classification.birthdayPersonName}"!`);
 
-    // Check if we can still wish this person (max 2 times per day)
-    const wishCount = getWishCount(groupId, classification.birthdayPersonName);
-    if (!canWishPerson(groupId, classification.birthdayPersonName)) {
-      console.log(`🔍 HANDLER: Already wished ${classification.birthdayPersonName} ${wishCount} times today (max ${MAX_WISHES_PER_PERSON})`);
+    // Check birthday count and "additional" pattern
+    const wishCount = getGroupWishCount(groupId);
+    const previousNames = getWishedNames(groupId);
+    const isAdditional = isAdditionalBirthdayMessage(messageBody);
+    
+    console.log(`🔍 HANDLER: Wish count today: ${wishCount}/${MAX_WISHES_PER_GROUP_PER_DAY}`);
+    console.log(`🔍 HANDLER: Is "additional birthday" pattern: ${isAdditional}`);
+    
+    if (wishCount >= MAX_WISHES_PER_GROUP_PER_DAY) {
+      console.log(`🔍 HANDLER: Already sent ${wishCount} message(s) today for: ${previousNames.join(', ')}`);
+      console.log(`🔍 HANDLER: Reached daily limit. Skipping.`);
       return;
     }
-    console.log(`🔍 HANDLER: Wish count for ${classification.birthdayPersonName}: ${wishCount}/${MAX_WISHES_PER_PERSON}`);
+    
+    // For second birthday, require "additional" pattern (like "וגם מזל טוב ל...")
+    if (wishCount === 1 && !isAdditional) {
+      console.log(`🔍 HANDLER: Already sent 1 message today for: ${previousNames.join(', ')}`);
+      console.log(`🔍 HANDLER: Second birthday requires "additional" pattern (וגם מזל טוב, etc). Skipping.`);
+      return;
+    }
+    
+    if (wishCount === 1 && isAdditional) {
+      console.log(`✅ HANDLER: Detected SECOND birthday of the day with "additional" pattern!`);
+    }
 
     // Generate a birthday message
     console.log('🔍 HANDLER: Generating birthday message...');
