@@ -39,7 +39,7 @@ export async function generateBirthdayMessage(
         { role: 'system', content: GENERATION_SYSTEM_PROMPT },
         { role: 'user', content: userPrompt },
       ],
-      temperature: 0.9, // Higher temperature for variety
+      temperature: 0.7, // Balanced - creative but coherent
       max_tokens: 200, // Increased for longer messages + disclaimer
     });
 

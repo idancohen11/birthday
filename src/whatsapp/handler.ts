@@ -255,13 +255,15 @@ export async function handleMessage(message: proto.IWebMessageInfo): Promise<voi
       return;
     }
 
-    // No name detected
+    // Use fallback name if none detected (common when people just tag @phone)
+    const FALLBACK_NAME = 'נשמה';
+    const birthdayName = classification.birthdayPersonName || FALLBACK_NAME;
+    
     if (!classification.birthdayPersonName) {
-      console.log('🔍 HANDLER: No name detected');
-      return;
+      console.log(`🔍 HANDLER: No name detected, using fallback "${FALLBACK_NAME}"`);
     }
 
-    console.log(`🎉 HANDLER: Valid birthday wish detected for "${classification.birthdayPersonName}"!`);
+    console.log(`🎉 HANDLER: Valid birthday wish detected for "${birthdayName}"!`);
 
     // Check birthday count and "additional" pattern
     const wishCount = getGroupWishCount(groupId);
@@ -291,7 +293,7 @@ export async function handleMessage(message: proto.IWebMessageInfo): Promise<voi
     // Generate a birthday message
     console.log('🔍 HANDLER: Generating birthday message...');
     const generated = await generateBirthdayMessage(
-      classification.birthdayPersonName,
+      birthdayName,
       config.openaiApiKey,
       config.generationModel
     );
@@ -308,11 +310,11 @@ export async function handleMessage(message: proto.IWebMessageInfo): Promise<voi
     if (config.dryRun) {
       console.log('\n' + '='.repeat(50));
       console.log('🎂 [DRY RUN] Would send birthday message:');
-      console.log(`   For: ${classification.birthdayPersonName}`);
+      console.log(`   For: ${birthdayName}`);
       console.log(`   Message: "${generated.message}"`);
       console.log(`   Delay: ${Math.round(delayMs / 1000)} seconds`);
       console.log('='.repeat(50) + '\n');
-      recordWish(groupId, classification.birthdayPersonName);
+      recordWish(groupId, birthdayName);
       return;
     }
 
@@ -320,7 +322,7 @@ export async function handleMessage(message: proto.IWebMessageInfo): Promise<voi
 
     // Send the message
     await socket.sendMessage(groupId, { text: generated.message });
-    recordWish(groupId, classification.birthdayPersonName);
+    recordWish(groupId, birthdayName);
 
     console.log('✅ HANDLER: Birthday message sent successfully!');
 
