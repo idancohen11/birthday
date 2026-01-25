@@ -16,6 +16,16 @@ const CONTEXT_EXPIRY_MINUTES = 720;
 // Store recent messages per group for context
 const recentMessagesCache = new Map<string, { text: string; timestamp: number }[]>();
 
+// Track pending birthdays waiting for a name (when initial message has no name)
+interface PendingBirthday {
+  timestamp: number;
+  messagesWaited: number;
+}
+const pendingBirthdays = new Map<string, PendingBirthday>();
+
+// How many messages to wait for a name before using fallback
+const PENDING_BIRTHDAY_MAX_MESSAGES = 3;
+
 // Track birthday wishes TODAY (persisted to file)
 const BIRTHDAY_WISHES_FILE = path.join(process.cwd(), 'data', 'today_wishes.json');
 const MAX_WISHES_PER_GROUP_PER_DAY = 2; // Allow 2 birthday messages per day (for rare cases of 2 birthdays)
@@ -159,6 +169,111 @@ function getRecentMessagesContext(groupId: string): string[] {
 }
 
 /**
+ * Send a birthday message (extracted to reuse for pending birthdays)
+ */
+async function sendBirthdayMessage(groupId: string, name: string): Promise<void> {
+  const socket = getSocket();
+  if (!socket) {
+    console.log('❌ Cannot send birthday message: socket not available');
+    return;
+  }
+
+  console.log(`🎉 Sending birthday message for "${name}"...`);
+
+  const generated = await generateBirthdayMessage(
+    name,
+    config.openaiApiKey,
+    config.generationModel
+  );
+
+  console.log(`📝 Generated: "${generated.message}"`);
+
+  const delayMs = Math.floor(
+    Math.random() * (config.responseDelayMax - config.responseDelayMin) + config.responseDelayMin
+  );
+
+  if (config.dryRun) {
+    console.log('\n' + '='.repeat(50));
+    console.log('🎂 [DRY RUN] Would send birthday message:');
+    console.log(`   For: ${name}`);
+    console.log(`   Message: "${generated.message}"`);
+    console.log(`   Delay: ${Math.round(delayMs / 1000)} seconds`);
+    console.log('='.repeat(50) + '\n');
+    recordWish(groupId, name);
+    return;
+  }
+
+  console.log(`⏳ Waiting ${Math.round(delayMs / 1000)} seconds...`);
+  await randomDelay(delayMs, delayMs);
+
+  await socket.sendMessage(groupId, { text: generated.message });
+  recordWish(groupId, name);
+
+  console.log('✅ Birthday message sent!');
+}
+
+/**
+ * Set a pending birthday that will wait for follow-up messages with a name
+ */
+function setPendingBirthday(groupId: string): void {
+  pendingBirthdays.set(groupId, { timestamp: Date.now(), messagesWaited: 0 });
+  console.log(`⏳ Set pending birthday, waiting for up to ${PENDING_BIRTHDAY_MAX_MESSAGES} messages to find a name...`);
+}
+
+/**
+ * Clear a pending birthday
+ */
+function clearPendingBirthday(groupId: string): void {
+  pendingBirthdays.delete(groupId);
+}
+
+/**
+ * Check if there's a pending birthday and resolve it with a name
+ */
+async function resolvePendingBirthday(groupId: string, name: string): Promise<boolean> {
+  if (!pendingBirthdays.has(groupId)) {
+    return false;
+  }
+
+  console.log(`🎯 Found name "${name}" for pending birthday!`);
+  clearPendingBirthday(groupId);
+
+  if (canSendBirthdayWish(groupId)) {
+    await sendBirthdayMessage(groupId, name);
+    return true;
+  } else {
+    console.log('❌ Cannot send: daily limit reached');
+    return false;
+  }
+}
+
+/**
+ * Increment pending birthday message count, return true if we should give up and use fallback
+ */
+async function incrementPendingAndCheckFallback(groupId: string): Promise<boolean> {
+  const pending = pendingBirthdays.get(groupId);
+  if (!pending) return false;
+
+  pending.messagesWaited++;
+  console.log(`⏳ Pending birthday: waited ${pending.messagesWaited}/${PENDING_BIRTHDAY_MAX_MESSAGES} messages`);
+
+  if (pending.messagesWaited >= PENDING_BIRTHDAY_MAX_MESSAGES) {
+    const FALLBACK_NAME = 'נשמה';
+    console.log(`⏰ Max messages reached, using fallback "${FALLBACK_NAME}"`);
+    clearPendingBirthday(groupId);
+
+    if (canSendBirthdayWish(groupId)) {
+      await sendBirthdayMessage(groupId, FALLBACK_NAME);
+    } else {
+      console.log('❌ Cannot send: daily limit reached');
+    }
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Main message handler - processes incoming WhatsApp messages
  */
 export async function handleMessage(message: proto.IWebMessageInfo): Promise<void> {
@@ -238,12 +353,26 @@ export async function handleMessage(message: proto.IWebMessageInfo): Promise<voi
       return;
     }
 
-    // Log the birthday name if detected (even for follow-ups)
+    // Log the birthday name if detected
     if (classification.birthdayPersonName) {
       console.log(`📝 HANDLER: Detected birthday for "${classification.birthdayPersonName}"`);
     }
 
-    // Not an initial wish (it's a follow-up)
+    // SMART NAME EXTRACTION for pending birthdays
+    if (!classification.isInitialWish && pendingBirthdays.has(groupId)) {
+      if (classification.birthdayPersonName) {
+        // Follow-up WITH name → use it!
+        console.log('🎯 HANDLER: Follow-up message has a name, resolving pending birthday!');
+        await resolvePendingBirthday(groupId, classification.birthdayPersonName);
+      } else {
+        // Follow-up WITHOUT name → increment counter, maybe use fallback
+        console.log('🔍 HANDLER: Follow-up without name, checking message count...');
+        await incrementPendingAndCheckFallback(groupId);
+      }
+      return;
+    }
+
+    // Regular follow-up (no pending birthday) - skip
     if (!classification.isInitialWish) {
       console.log('🔍 HANDLER: Birthday follow-up, not initial wish');
       return;
@@ -254,16 +383,6 @@ export async function handleMessage(message: proto.IWebMessageInfo): Promise<voi
       console.log(`🔍 HANDLER: Low confidence (${classification.confidence} < ${config.confidenceThreshold})`);
       return;
     }
-
-    // Use fallback name if none detected (common when people just tag @phone)
-    const FALLBACK_NAME = 'נשמה';
-    const birthdayName = classification.birthdayPersonName || FALLBACK_NAME;
-    
-    if (!classification.birthdayPersonName) {
-      console.log(`🔍 HANDLER: No name detected, using fallback "${FALLBACK_NAME}"`);
-    }
-
-    console.log(`🎉 HANDLER: Valid birthday wish detected for "${birthdayName}"!`);
 
     // Check birthday count and "additional" pattern
     const wishCount = getGroupWishCount(groupId);
@@ -290,41 +409,17 @@ export async function handleMessage(message: proto.IWebMessageInfo): Promise<voi
       console.log(`✅ HANDLER: Detected SECOND birthday of the day with "additional" pattern!`);
     }
 
-    // Generate a birthday message
-    console.log('🔍 HANDLER: Generating birthday message...');
-    const generated = await generateBirthdayMessage(
-      birthdayName,
-      config.openaiApiKey,
-      config.generationModel
-    );
-
-    console.log(`🔍 HANDLER: Generated message: "${generated.message}"`);
-
-    // Add a random delay to seem more natural
-    const delayMs = Math.floor(
-      Math.random() * (config.responseDelayMax - config.responseDelayMin) + config.responseDelayMin
-    );
-    
-    console.log(`🔍 HANDLER: Will wait ${Math.round(delayMs / 1000)} seconds before sending`);
-    
-    if (config.dryRun) {
-      console.log('\n' + '='.repeat(50));
-      console.log('🎂 [DRY RUN] Would send birthday message:');
-      console.log(`   For: ${birthdayName}`);
-      console.log(`   Message: "${generated.message}"`);
-      console.log(`   Delay: ${Math.round(delayMs / 1000)} seconds`);
-      console.log('='.repeat(50) + '\n');
-      recordWish(groupId, birthdayName);
-      return;
+    // INITIAL BIRTHDAY MESSAGE - check if we have a name
+    if (classification.birthdayPersonName) {
+      // We have a name - send immediately
+      console.log(`🎉 HANDLER: Initial birthday with name "${classification.birthdayPersonName}"!`);
+      await sendBirthdayMessage(groupId, classification.birthdayPersonName);
+    } else {
+      // No name - set pending and wait for follow-ups to provide one
+      console.log('🔍 HANDLER: Initial birthday detected but NO NAME found');
+      console.log('⏳ HANDLER: Setting pending birthday, waiting for follow-up messages with name...');
+      setPendingBirthday(groupId);
     }
-
-    await randomDelay(delayMs, delayMs);
-
-    // Send the message
-    await socket.sendMessage(groupId, { text: generated.message });
-    recordWish(groupId, birthdayName);
-
-    console.log('✅ HANDLER: Birthday message sent successfully!');
 
   } catch (error) {
     console.error('❌ HANDLER ERROR:', error);
