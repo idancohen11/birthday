@@ -10,6 +10,7 @@
     "dev": "tsx watch src/index.ts",
     "test-prompt": "tsx src/tools/test-prompt.ts",
     "list-groups": "tsx src/tools/list-groups.ts",
+    "send-birthday": "tsx src/tools/send-birthday.ts",
     "test": "vitest",
     "lint": "eslint src --ext .ts"
   },

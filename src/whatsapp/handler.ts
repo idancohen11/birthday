@@ -26,6 +26,10 @@ const pendingBirthdays = new Map<string, PendingBirthday>();
 // How many messages to wait for a name before using fallback
 const PENDING_BIRTHDAY_MAX_MESSAGES = 3;
 
+// Generic terms that are NOT real names (Hebrew terms of endearment)
+// These should not be treated as birthday person names
+const GENERIC_TERMS = ['נשמה', 'חבר', 'חברה', 'יקיר', 'יקירה', 'מלך', 'מלכה', 'גבר', 'אח', 'אחי'];
+
 // Track birthday wishes TODAY (persisted to file)
 const BIRTHDAY_WISHES_FILE = path.join(process.cwd(), 'data', 'today_wishes.json');
 const MAX_WISHES_PER_GROUP_PER_DAY = 2; // Allow 2 birthday messages per day (for rare cases of 2 birthdays)
@@ -301,10 +305,13 @@ export async function handleMessage(message: proto.IWebMessageInfo): Promise<voi
     console.log(`🔍 HANDLER: isGroup=${isGroup}, remoteJid=${remoteJid}`);
     console.log(`🔍 HANDLER: config.targetGroupId="${config.targetGroupId}"`);
     
-    // Get message text
+    // Get message text (including captions from media messages)
     const messageBody = 
       message.message?.conversation ||
       message.message?.extendedTextMessage?.text ||
+      message.message?.imageMessage?.caption ||
+      message.message?.videoMessage?.caption ||
+      message.message?.documentMessage?.caption ||
       '';
 
     if (!messageBody) return;
@@ -360,13 +367,19 @@ export async function handleMessage(message: proto.IWebMessageInfo): Promise<voi
 
     // SMART NAME EXTRACTION for pending birthdays
     if (!classification.isInitialWish && pendingBirthdays.has(groupId)) {
-      if (classification.birthdayPersonName) {
-        // Follow-up WITH name → use it!
-        console.log('🎯 HANDLER: Follow-up message has a name, resolving pending birthday!');
-        await resolvePendingBirthday(groupId, classification.birthdayPersonName);
+      const followUpName = classification.birthdayPersonName;
+      const isValidFollowUpName = followUpName && !GENERIC_TERMS.includes(followUpName.trim());
+      
+      if (isValidFollowUpName) {
+        // Follow-up WITH valid name → use it!
+        console.log(`🎯 HANDLER: Follow-up message has a valid name "${followUpName}", resolving pending birthday!`);
+        await resolvePendingBirthday(groupId, followUpName);
       } else {
-        // Follow-up WITHOUT name → increment counter, maybe use fallback
-        console.log('🔍 HANDLER: Follow-up without name, checking message count...');
+        // Follow-up WITHOUT valid name → increment counter, maybe use fallback
+        if (followUpName) {
+          console.log(`🔍 HANDLER: Follow-up has "${followUpName}" but it's a generic term, not counting as name`);
+        }
+        console.log('🔍 HANDLER: Follow-up without valid name, checking message count...');
         await incrementPendingAndCheckFallback(groupId);
       }
       return;
@@ -409,14 +422,20 @@ export async function handleMessage(message: proto.IWebMessageInfo): Promise<voi
       console.log(`✅ HANDLER: Detected SECOND birthday of the day with "additional" pattern!`);
     }
 
-    // INITIAL BIRTHDAY MESSAGE - check if we have a name
-    if (classification.birthdayPersonName) {
-      // We have a name - send immediately
-      console.log(`🎉 HANDLER: Initial birthday with name "${classification.birthdayPersonName}"!`);
-      await sendBirthdayMessage(groupId, classification.birthdayPersonName);
+    // INITIAL BIRTHDAY MESSAGE - check if we have a REAL name
+    const extractedName = classification.birthdayPersonName;
+    const isValidName = extractedName && !GENERIC_TERMS.includes(extractedName.trim());
+
+    if (isValidName) {
+      // We have a real name - send immediately
+      console.log(`🎉 HANDLER: Initial birthday with name "${extractedName}"!`);
+      await sendBirthdayMessage(groupId, extractedName);
     } else {
-      // No name - set pending and wait for follow-ups to provide one
-      console.log('🔍 HANDLER: Initial birthday detected but NO NAME found');
+      // No name or generic term - set pending and wait for follow-ups to provide one
+      console.log('🔍 HANDLER: Initial birthday detected but NO VALID NAME found');
+      if (extractedName) {
+        console.log(`🔍 HANDLER: Extracted "${extractedName}" is a generic term, not a real name`);
+      }
       console.log('⏳ HANDLER: Setting pending birthday, waiting for follow-up messages with name...');
       setPendingBirthday(groupId);
     }

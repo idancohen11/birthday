@@ -1,31 +1,46 @@
-export const CLASSIFICATION_SYSTEM_PROMPT = `You are an expert at analyzing WhatsApp group messages to detect birthday wishes.
-Your job is to determine if a message is a birthday wish and whether it's the INITIAL wish or a follow-up.
+export const CLASSIFICATION_SYSTEM_PROMPT = `You are an expert at analyzing WhatsApp group messages to detect BIRTHDAY wishes specifically.
+Your job is to determine if a message is a BIRTHDAY wish and whether it's the INITIAL wish or a follow-up.
 
-Key distinctions:
-- INITIAL wishes are the first message wishing someone happy birthday. They typically:
+CRITICAL - Distinguish BIRTHDAY from other "מזל טוב" events:
+- "מזל טוב" in Hebrew is used for MANY occasions, not just birthdays!
+- BIRTHDAY indicators: "יום הולדת", "birthday", "bday", age references, 🎂 cake emoji, birthday-specific phrases
+- NOT BIRTHDAY (ignore these): 
+  - New baby/birth: "נחת", "שעות שינה", "תינוק", 👼🏻 baby angel, 🐣 hatching chick, "בשעה טובה"
+  - Wedding/engagement: "חתונה", "אירוסין", "כלה", "חתן", 💍
+  - Promotion/new job: "קידום", "תפקיד חדש", "הצלחה בתפקיד"
+  - Generic congratulations without birthday context
+- If context messages are congratulating someone for a NON-birthday event, ignore them when classifying the current message!
+
+Key distinctions for INITIAL vs FOLLOW-UP:
+- INITIAL wishes are the FIRST message wishing someone happy BIRTHDAY. They typically:
   - Mention the person's name
-  - Include phrases like "יום הולדת שמח", "Happy birthday", "מזל טוב ליום ההולדת"
+  - Include explicit birthday phrases like "יום הולדת שמח", "Happy birthday"
   - Are longer and more personal
-  - Come BEFORE other birthday wishes in the conversation
-
-- FOLLOW-UP wishes are responses to an initial wish. They typically:
+  
+- FOLLOW-UP wishes are responses to an initial BIRTHDAY wish. They typically:
   - Are short (1-3 words or just emojis)
-  - Say things like "מזל טוב!", "🎂", "Happy bday!", "+1", "מצטרף/ת!"
-  - Don't mention the person's name (because it's already known from context)
-  - Come AFTER someone else already wished happy birthday
+  - Say things like "מזל טוב!", "🎂", "+1", "מצטרף/ת!"
+  - Come AFTER someone else already wished happy BIRTHDAY to the SAME person
 
-IMPORTANT - Name Extraction:
+VERY IMPORTANT - Different Person = New Initial Wish:
+- If context has birthday wishes for "דנה" and current message wishes "יוסי" happy birthday → this is an INITIAL wish for יוסי!
+- Only consider it a follow-up if the SAME person was already wished happy birthday
+- Context messages for a different person or different event should NOT make current message a "follow-up"
+
+Name Extraction:
 - The message might contain @mentions in various formats:
   - "@Name" - extract "Name"
-  - "@+972..." or "@972..." (phone number) - this means someone was tagged, look for their actual name elsewhere in the message
-  - If the message has a phone number tag but also mentions a name like "ל{name}" or "של {name}", extract that name
+  - "@+972..." or "@972..." (phone number) - look for actual name elsewhere in the message
   - If ONLY a phone number tag exists with no name, birthdayPersonName should be null
 - Names might appear with Hebrew prefixes: "ליוסי" = "יוסי", "לדנה" = "דנה"
 - Extract the first name only, without prefixes
+- NEVER extract generic Hebrew terms of endearment as names. These are NOT names:
+  - "נשמה" (soul/sweetheart), "חבר/חברה" (friend), "יקיר/יקירה" (dear), "מלך/מלכה" (king/queen), "גבר" (man), "אח/אחי" (bro)
+  - Example: "שחקנית נשמה" means "awesome person" - "נשמה" here is NOT a name
+  - If the only "name" you can find is one of these terms, return birthdayPersonName as null
 
 Other rules:
-- Messages that are ONLY emojis (like "🎂🎉" or "🎈🎂🎊") are almost always follow-ups.
-- If you see recent messages already wishing someone happy birthday, the new message is likely a follow-up.
+- Messages that are ONLY emojis (like "🎂🎉") are almost always follow-ups IF there's a birthday wish in context for the same person.
 - The group uses Hebrew and English.`;
 
 export const CLASSIFICATION_USER_PROMPT = `Analyze this WhatsApp message and determine if it's a birthday wish.
