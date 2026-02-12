@@ -135,6 +135,34 @@ function recordWish(groupId: string, name: string): void {
   saveTodayWishes(data);
 }
 
+/**
+ * Try to extract a name from "מזל טוב X" patterns using simple regex
+ * This is a fallback when AI classification fails due to context pollution
+ */
+function extractNameFromMazalTov(message: string): string | null {
+  // Patterns to match "מזל טוב [name]" in various forms
+  const patterns = [
+    /מזל\s*טוב\s+([א-ת]+)/i,          // מזל טוב שם
+    /מזל\s*טוב\s+ל([א-ת]+)/i,         // מזל טוב לשם  
+    /מזל\s*טוב\s+([A-Za-z]+)/i,       // מזל טוב Name
+    /המון\s+מזל\s*טוב\s+([א-ת]+)/i,   // המון מזל טוב שם
+    /המון\s+מזל\s*טוב\s+ל([א-ת]+)/i,  // המון מזל טוב לשם
+  ];
+  
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match && match[1]) {
+      const name = match[1].trim();
+      // Filter out very short names (likely not real names) and generic terms
+      if (name.length >= 2 && !GENERIC_TERMS.includes(name)) {
+        return name;
+      }
+    }
+  }
+  
+  return null;
+}
+
 function cleanExpiredMessages(groupId: string) {
   const messages = recentMessagesCache.get(groupId);
   if (!messages) return;
@@ -354,18 +382,49 @@ export async function handleMessage(message: proto.IWebMessageInfo): Promise<voi
 
     console.log('🔍 HANDLER: Classification result:', JSON.stringify(classification, null, 2));
 
-    // Not a birthday message
-    if (!classification.isBirthday) {
-      console.log('🔍 HANDLER: Not a birthday message');
-      return;
-    }
-
     // Log the birthday name if detected
     if (classification.birthdayPersonName) {
       console.log(`📝 HANDLER: Detected birthday for "${classification.birthdayPersonName}"`);
     }
 
-    // SMART NAME EXTRACTION for pending birthdays
+    // PRIORITY: Check for pending birthday BEFORE checking if it's a birthday message
+    // This is important because context pollution (e.g., baby announcements) can cause
+    // the AI to say "not a birthday" even when there's a valid name for our pending birthday
+    if (pendingBirthdays.has(groupId)) {
+      console.log('🔍 HANDLER: Pending birthday exists, checking for name in this message...');
+      
+      // Try to extract name - either from AI classification or from simple pattern matching
+      let extractedName = classification.birthdayPersonName;
+      
+      // If AI didn't extract a name, try simple pattern matching for "מזל טוב X" 
+      if (!extractedName) {
+        extractedName = extractNameFromMazalTov(messageBody);
+        if (extractedName) {
+          console.log(`🔍 HANDLER: Pattern matching found potential name: "${extractedName}"`);
+        }
+      }
+      
+      const isValidName = extractedName && !GENERIC_TERMS.includes(extractedName.trim());
+      
+      if (isValidName && extractedName) {
+        console.log(`🎯 HANDLER: Found valid name "${extractedName}" for pending birthday!`);
+        await resolvePendingBirthday(groupId, extractedName);
+        return;
+      }
+      
+      // No valid name found - increment counter toward fallback
+      console.log('🔍 HANDLER: No valid name found, incrementing pending counter...');
+      await incrementPendingAndCheckFallback(groupId);
+      return;
+    }
+
+    // Not a birthday message (and no pending birthday)
+    if (!classification.isBirthday) {
+      console.log('🔍 HANDLER: Not a birthday message');
+      return;
+    }
+
+    // SMART NAME EXTRACTION for pending birthdays (legacy path - shouldn't reach here often)
     if (!classification.isInitialWish && pendingBirthdays.has(groupId)) {
       const followUpName = classification.birthdayPersonName;
       const isValidFollowUpName = followUpName && !GENERIC_TERMS.includes(followUpName.trim());
