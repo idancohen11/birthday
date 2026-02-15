@@ -49,7 +49,14 @@ export async function generateBirthdayMessage(
     }
 
     // Clean up any quotes that might be included
-    const cleanedMessage = content.replace(/^["']|["']$/g, '');
+    let cleanedMessage = content.replace(/^["']|["']$/g, '');
+    
+    // Safety check: if the name is a real name (not generic fallback) and doesn't appear in the message, prepend it
+    const isGenericName = finalName === 'חבר/ה' || finalName === 'נשמה';
+    if (!isGenericName && !cleanedMessage.includes(finalName)) {
+      logger.debug('Name not found in generated message, prepending', { name: finalName });
+      cleanedMessage = `${finalName}, ${cleanedMessage}`;
+    }
     
     // Detect language
     const hasHebrew = /[\u0590-\u05FF]/.test(cleanedMessage);
