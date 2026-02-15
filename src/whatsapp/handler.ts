@@ -3,6 +3,7 @@ import { getSocket } from './client.js';
 import { config } from '../config.js';
 import { classifyMessage, mightBeBirthdayMessage, generateBirthdayMessage } from '../ai/index.js';
 import { randomDelay } from '../utils/delay.js';
+import { extractNameFromMazalTov, isValidName, GENERIC_TERMS } from '../utils/nameExtractor.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -26,9 +27,7 @@ const pendingBirthdays = new Map<string, PendingBirthday>();
 // How many messages to wait for a name before using fallback
 const PENDING_BIRTHDAY_MAX_MESSAGES = 3;
 
-// Generic terms that are NOT real names (Hebrew terms of endearment)
-// These should not be treated as birthday person names
-const GENERIC_TERMS = ['נשמה', 'חבר', 'חברה', 'יקיר', 'יקירה', 'מלך', 'מלכה', 'גבר', 'אח', 'אחי'];
+// GENERIC_TERMS is imported from '../utils/nameExtractor.js'
 
 // Track birthday wishes TODAY (persisted to file)
 const BIRTHDAY_WISHES_FILE = path.join(process.cwd(), 'data', 'today_wishes.json');
@@ -135,33 +134,7 @@ function recordWish(groupId: string, name: string): void {
   saveTodayWishes(data);
 }
 
-/**
- * Try to extract a name from "מזל טוב X" patterns using simple regex
- * This is a fallback when AI classification fails due to context pollution
- */
-function extractNameFromMazalTov(message: string): string | null {
-  // Patterns to match "מזל טוב [name]" in various forms
-  const patterns = [
-    /מזל\s*טוב\s+([א-ת]+)/i,          // מזל טוב שם
-    /מזל\s*טוב\s+ל([א-ת]+)/i,         // מזל טוב לשם  
-    /מזל\s*טוב\s+([A-Za-z]+)/i,       // מזל טוב Name
-    /המון\s+מזל\s*טוב\s+([א-ת]+)/i,   // המון מזל טוב שם
-    /המון\s+מזל\s*טוב\s+ל([א-ת]+)/i,  // המון מזל טוב לשם
-  ];
-  
-  for (const pattern of patterns) {
-    const match = message.match(pattern);
-    if (match && match[1]) {
-      const name = match[1].trim();
-      // Filter out very short names (likely not real names) and generic terms
-      if (name.length >= 2 && !GENERIC_TERMS.includes(name)) {
-        return name;
-      }
-    }
-  }
-  
-  return null;
-}
+// extractNameFromMazalTov is imported from '../utils/nameExtractor.js'
 
 function cleanExpiredMessages(groupId: string) {
   const messages = recentMessagesCache.get(groupId);
