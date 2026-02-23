@@ -7,7 +7,7 @@ import { makeWASocket, useMultiFileAuthState, DisconnectReason } from '@whiskeys
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import { config } from '../config.js';
-import { generateBirthdayMessage } from '../ai/generator.js';
+import { generateBirthdayMessage, replaceNamePlaceholder } from '../ai/generator.js';
 
 const name = process.argv[2];
 
@@ -57,14 +57,15 @@ async function main() {
           config.generationModel
         );
 
-        console.log(`\n📝 Generated message:\n${generated.message}\n`);
+        const messageToSend = replaceNamePlaceholder(generated.message, name);
+        console.log(`\n📝 Generated message:\n${messageToSend}\n`);
 
         // Ask for confirmation
         console.log('Sending in 3 seconds... (Ctrl+C to cancel)');
         await new Promise(resolve => setTimeout(resolve, 3000));
 
         // Send the message
-        await socket.sendMessage(config.targetGroupId, { text: generated.message });
+        await socket.sendMessage(config.targetGroupId, { text: messageToSend });
         console.log('✅ Message sent successfully!\n');
 
         // Clean exit

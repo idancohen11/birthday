@@ -1,7 +1,13 @@
 import { proto } from '@whiskeysockets/baileys';
 import { getSocket } from './client.js';
 import { config } from '../config.js';
-import { classifyMessage, mightBeBirthdayMessage, generateBirthdayMessage } from '../ai/index.js';
+import {
+  classifyMessage,
+  mightBeBirthdayMessage,
+  generateBirthdayMessage,
+  replaceNamePlaceholder,
+  BlessingValidationFailedError,
+} from '../ai/index.js';
 import { randomDelay } from '../utils/delay.js';
 import { extractNameFromMazalTov, isValidName, GENERIC_TERMS } from '../utils/nameExtractor.js';
 import * as fs from 'fs';
@@ -174,9 +180,10 @@ function getRecentMessagesContext(groupId: string): string[] {
 }
 
 /**
- * Send a birthday message (extracted to reuse for pending birthdays)
+ * Send a birthday message (extracted to reuse for pending birthdays).
+ * Exported for tests (do not send when generation/validation fails).
  */
-async function sendBirthdayMessage(groupId: string, name: string): Promise<void> {
+export async function sendBirthdayMessage(groupId: string, name: string): Promise<void> {
   const socket = getSocket();
   if (!socket) {
     console.log('❌ Cannot send birthday message: socket not available');
@@ -185,13 +192,31 @@ async function sendBirthdayMessage(groupId: string, name: string): Promise<void>
 
   console.log(`🎉 Sending birthday message for "${name}"...`);
 
-  const generated = await generateBirthdayMessage(
-    name,
-    config.openaiApiKey,
-    config.generationModel
-  );
+  let generated;
+  try {
+    generated = await generateBirthdayMessage(
+      name,
+      config.openaiApiKey,
+      config.generationModel
+    );
+  } catch (error) {
+    if (error instanceof BlessingValidationFailedError) {
+      console.error(
+        `❌ Not sending: blessing failed validation after ${error.attempts} attempts`
+      );
+    } else {
+      console.error('❌ Not sending: generation failed', error);
+    }
+    return;
+  }
 
   console.log(`📝 Generated: "${generated.message}"`);
+
+  // Never send literal {name} – final safeguard in case generator ever returns a placeholder
+  const messageToSend = replaceNamePlaceholder(generated.message, name);
+  if (messageToSend !== generated.message) {
+    console.warn('⚠️ Replaced leftover {name} placeholder before sending – fix generator if this appears often');
+  }
 
   const delayMs = Math.floor(
     Math.random() * (config.responseDelayMax - config.responseDelayMin) + config.responseDelayMin
@@ -201,7 +226,7 @@ async function sendBirthdayMessage(groupId: string, name: string): Promise<void>
     console.log('\n' + '='.repeat(50));
     console.log('🎂 [DRY RUN] Would send birthday message:');
     console.log(`   For: ${name}`);
-    console.log(`   Message: "${generated.message}"`);
+    console.log(`   Message: "${messageToSend}"`);
     console.log(`   Delay: ${Math.round(delayMs / 1000)} seconds`);
     console.log('='.repeat(50) + '\n');
     recordWish(groupId, name);
@@ -211,7 +236,7 @@ async function sendBirthdayMessage(groupId: string, name: string): Promise<void>
   console.log(`⏳ Waiting ${Math.round(delayMs / 1000)} seconds...`);
   await randomDelay(delayMs, delayMs);
 
-  await socket.sendMessage(groupId, { text: generated.message });
+  await socket.sendMessage(groupId, { text: messageToSend });
   recordWish(groupId, name);
 
   console.log('✅ Birthday message sent!');
