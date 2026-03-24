@@ -54,6 +54,56 @@ describe('extractNameFromMazalTov', () => {
     });
   });
 
+  describe('יום הולדת שמח patterns', () => {
+    it('should extract name from "יום הולדת שמח ל[name]"', () => {
+      expect(extractNameFromMazalTov('יום הולדת שמח לדנה!')).toBe('דנה');
+      expect(extractNameFromMazalTov('יום הולדת שמח ליוסי')).toBe('יוסי');
+    });
+
+    it('should extract name from "יום הולדת שמח [name]"', () => {
+      expect(extractNameFromMazalTov('יום הולדת שמח דנה!')).toBe('דנה');
+      expect(extractNameFromMazalTov('יום הולדת שמח עידן')).toBe('עידן');
+    });
+
+    it('should NOT extract generic terms from יום הולדת שמח patterns', () => {
+      expect(extractNameFromMazalTov('יום הולדת שמח נשמה!')).toBeNull();
+      expect(extractNameFromMazalTov('יום הולדת שמח חבר')).toBeNull();
+      expect(extractNameFromMazalTov('יום הולדת שמח מלך')).toBeNull();
+    });
+  });
+
+  describe('@mention patterns', () => {
+    it('should extract name from "@[name] מזל טוב"', () => {
+      expect(extractNameFromMazalTov('@דנה מזל טוב!')).toBe('דנה');
+      expect(extractNameFromMazalTov('@יוסי מזל טוב')).toBe('יוסי');
+    });
+
+    it('should extract name from "@[name] יום הולדת שמח"', () => {
+      expect(extractNameFromMazalTov('@דנה יום הולדת שמח!')).toBe('דנה');
+    });
+
+    it('should extract English @mentions', () => {
+      expect(extractNameFromMazalTov('@David happy birthday!')).toBe('David');
+      expect(extractNameFromMazalTov('@Sarah מזל טוב')).toBe('Sarah');
+    });
+
+    it('should NOT extract phone numbers from @mentions', () => {
+      expect(extractNameFromMazalTov('@972501234567 מזל טוב!')).toBeNull();
+      expect(extractNameFromMazalTov('@+972501234567 יום הולדת שמח!')).toBeNull();
+    });
+  });
+
+  describe('happy birthday (English) patterns', () => {
+    it('should extract name from "happy birthday [name]"', () => {
+      expect(extractNameFromMazalTov('Happy birthday David!')).toBe('David');
+      expect(extractNameFromMazalTov('happy birthday Sarah')).toBe('Sarah');
+    });
+
+    it('should extract Hebrew name from "happy birthday [name]"', () => {
+      expect(extractNameFromMazalTov('Happy birthday דנה!')).toBe('דנה');
+    });
+  });
+
   describe('no name cases', () => {
     it('should return null when no name pattern found', () => {
       expect(extractNameFromMazalTov('מזל טוב!')).toBeNull();

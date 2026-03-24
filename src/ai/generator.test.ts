@@ -6,8 +6,9 @@ import {
   runGenerationWithValidation,
   BlessingValidationFailedError,
   MAX_VALIDATION_ATTEMPTS,
+  pickRandomTheme,
 } from './generator.js';
-import { BIRTHDAY_DISCLAIMER } from './prompts.js';
+import { BIRTHDAY_DISCLAIMER, GENERATION_THEMES, GENERATION_SYSTEM_PROMPT } from './prompts.js';
 
 describe('replaceNamePlaceholder', () => {
   it('replaces {name} with actual name', () => {
@@ -66,9 +67,16 @@ describe('stripLeadingOpening', () => {
     expect(stripLeadingOpening('מזל טוב נשמה! שנה טובה 🎂')).toBe('שנה טובה 🎂');
   });
 
-  it('strips "מזל טוב! Name " leaving only body', () => {
-    expect(stripLeadingOpening('מזל טוב! עידן עוד שנה של עבודה 🎂')).toBe(
+  it('strips "מזל טוב! Name " when name is provided', () => {
+    expect(stripLeadingOpening('מזל טוב! עידן עוד שנה של עבודה 🎂', 'עידן')).toBe(
       'עוד שנה של עבודה 🎂'
+    );
+  });
+
+  it('strips "מזל טוב" without eating next word when no name provided', () => {
+    // Should strip "מזל טוב" but leave the rest intact (no garbling)
+    expect(stripLeadingOpening('מזל טוב על יום ההולדת! הגיע הזמן')).toBe(
+      'על יום ההולדת! הגיע הזמן'
     );
   });
 
@@ -97,6 +105,24 @@ describe('cleanName (generator-style)', () => {
   });
 });
 
+describe('Name display in structured message', () => {
+  it('uses real Hebrew name (not נשמה) when name is valid', () => {
+    const msg = buildStructuredMessage('דנה', 'גוף ברכה 🎂');
+    expect(msg).toMatch(/^מזל טוב! דנה /);
+    expect(msg).not.toContain('נשמה');
+  });
+
+  it('uses real English name (not נשמה) when name is valid', () => {
+    const msg = buildStructuredMessage('David', 'body 🎂');
+    expect(msg).toMatch(/^מזל טוב! David /);
+    expect(msg).not.toContain('נשמה');
+  });
+
+  it('uses נשמה for generic fallback names', () => {
+    expect(buildStructuredMessage('נשמה', 'body 🎂')).toMatch(/^מזל טוב נשמה!/);
+  });
+});
+
 describe('Production bugs – must not regress', () => {
   it('must never send literal {name}', () => {
     const sanitized = replaceNamePlaceholder('מלכת האוטומציות, **{name}**, מזל טוב!', 'Hen');
@@ -109,6 +135,38 @@ describe('Production bugs – must not regress', () => {
     expect(withName).toMatch(/^מזל טוב! Hen /);
     const noName = buildStructuredMessage('נשמה', 'שנה טובה 🎂');
     expect(noName).toMatch(/^מזל טוב נשמה! /);
+  });
+});
+
+describe('Message diversity – theme randomization', () => {
+  it('GENERATION_THEMES has at least 10 themes for variety', () => {
+    expect(GENERATION_THEMES.length).toBeGreaterThanOrEqual(10);
+  });
+
+  it('pickRandomTheme returns a theme from the list', () => {
+    for (let i = 0; i < 20; i++) {
+      const theme = pickRandomTheme();
+      expect(GENERATION_THEMES).toContain(theme);
+    }
+  });
+
+  it('pickRandomTheme produces different themes over multiple calls', () => {
+    const themes = new Set<string>();
+    for (let i = 0; i < 50; i++) {
+      themes.add(pickRandomTheme());
+    }
+    // With 10+ themes and 50 tries, we should see at least 3 distinct themes
+    expect(themes.size).toBeGreaterThanOrEqual(3);
+  });
+
+  it('system prompt examples do not repeat "עוגה" more than once', () => {
+    const matches = GENERATION_SYSTEM_PROMPT.match(/עוגה/g) || [];
+    expect(matches.length).toBeLessThanOrEqual(1);
+  });
+
+  it('system prompt examples do not repeat "פגישות" more than once', () => {
+    const matches = GENERATION_SYSTEM_PROMPT.match(/פגישות/g) || [];
+    expect(matches.length).toBeLessThanOrEqual(1);
   });
 });
 

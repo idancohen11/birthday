@@ -480,10 +480,21 @@ export async function handleMessage(message: proto.IWebMessageInfo): Promise<voi
     }
 
     // INITIAL BIRTHDAY MESSAGE - check if we have a REAL name
-    const extractedName = classification.birthdayPersonName;
-    const isValidName = extractedName && !GENERIC_TERMS.includes(extractedName.trim());
+    // Try AI classification first, then regex fallback on the original message
+    let extractedName = classification.birthdayPersonName;
 
-    if (isValidName) {
+    if (!extractedName || GENERIC_TERMS.includes(extractedName.trim())) {
+      // AI didn't find a valid name — try regex patterns on the original message
+      const regexName = extractNameFromMazalTov(messageBody);
+      if (regexName) {
+        console.log(`🔍 HANDLER: AI missed name, regex fallback found "${regexName}"`);
+        extractedName = regexName;
+      }
+    }
+
+    const nameIsValid = extractedName && !GENERIC_TERMS.includes(extractedName.trim());
+
+    if (nameIsValid && extractedName) {
       // We have a real name - send immediately
       console.log(`🎉 HANDLER: Initial birthday with name "${extractedName}"!`);
       await sendBirthdayMessage(groupId, extractedName);

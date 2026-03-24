@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { GeneratedMessage } from './types.js';
-import { GENERATION_SYSTEM_PROMPT, GENERATION_USER_PROMPT, BIRTHDAY_DISCLAIMER } from './prompts.js';
+import { GENERATION_SYSTEM_PROMPT, GENERATION_USER_PROMPT, GENERATION_THEMES, BIRTHDAY_DISCLAIMER } from './prompts.js';
 import { logger } from '../utils/logger.js';
 import { isValidName } from '../utils/nameExtractor.js';
 
@@ -39,17 +39,15 @@ async function validateNameWithLLM(
   }
 }
 
-const BLESSING_VALIDATION_PROMPT = `You are validating a birthday message (in Hebrew) that will be sent in a WhatsApp group.
+const BLESSING_VALIDATION_PROMPT = `You are validating a birthday message (in Hebrew) for a WhatsApp group.
 
-The message MUST:
-1. Be coherent and clear (readable, makes sense as a sentence or two).
-2. Be a proper birthday wish (congratulatory, appropriate for a birthday).
-3. Start with "מזל טוב!" followed by either:
-   - a real person's first name (Hebrew or English), OR
-   - the word "נשמה" (when the recipient's name is unknown).
-4. Then the rest of the blessing. It may end with a bot disclaimer – ignore that part for coherence.
+Answer "yes" if ALL of these are true:
+1. The text is readable and coherent Hebrew (a sentence or two).
+2. It starts with "מזל טוב".
+3. It is related to a birthday.
+4. It does not contain placeholders like {name} or [שם].
 
-Invalid examples: gibberish, offensive content, no name/nashama, placeholders like {name}, incoherent text, not a birthday wish.
+Ignore: the name after "מזל טוב" (already verified), any bot disclaimer at the end, occasional English words.
 
 Reply with exactly one word: yes or no.`;
 
@@ -77,7 +75,8 @@ async function validateBlessingWithLLM(
         { role: 'system', content: BLESSING_VALIDATION_PROMPT },
         {
           role: 'user',
-          content: `Is this birthday message valid?\n\n"""\n${fullMessage}\n"""`,
+          // Strip the bot disclaimer before validation — it confuses the model
+          content: `Is this birthday message valid?\n\n"""\n${fullMessage.split('\n\nגילוי נאות')[0]}\n"""`,
         },
       ],
       temperature: 0,
@@ -111,13 +110,24 @@ export async function runGenerationWithValidation<T>(
   throw new BlessingValidationFailedError(maxAttempts);
 }
 
+/** Pick a random theme to inject into the generation prompt for variety. Exported for tests. */
+export function pickRandomTheme(): string {
+  return GENERATION_THEMES[Math.floor(Math.random() * GENERATION_THEMES.length)];
+}
+
 /** Strip any leading "מזל טוב" / name the model might have included so we only have the body. Exported for tests. */
-export function stripLeadingOpening(text: string): string {
-  return text
-    .replace(/^מזל\s*טוב\s*נשמה\s*!?\s*/i, '')  // "מזל טוב נשמה! "
-    .replace(/^מזל\s*טוב\s*!?\s*\S+\s*/, '')   // "מזל טוב! Name " (one word)
-    .replace(/^[\s,]+/, '')
-    .trim();
+export function stripLeadingOpening(text: string, name?: string): string {
+  let result = text;
+  // Strip "מזל טוב נשמה!" first (most specific)
+  result = result.replace(/^מזל\s*טוב\s*נשמה\s*!?\s*/i, '');
+  // Strip "מזל טוב!" base prefix
+  result = result.replace(/^מזל\s*טוב\s*!?\s*/i, '');
+  // If the remaining text starts with the known name, strip it to avoid duplicates
+  if (name) {
+    const namePattern = new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[,!]?\\s*`, 'i');
+    result = result.replace(namePattern, '');
+  }
+  return result.replace(/^[\s,]+/, '').trim();
 }
 
 /** Build the only allowed message structure: "מזל טוב! Name body" or "מזל טוב נשמה! body". Exported for tests. */
@@ -148,7 +158,7 @@ async function generateOneAttempt(
       { role: 'system', content: GENERATION_SYSTEM_PROMPT },
       { role: 'user', content: userPrompt },
     ],
-    temperature: 0.85,
+    temperature: 0.9,
     max_tokens: 200,
   });
 
@@ -158,21 +168,14 @@ async function generateOneAttempt(
   }
 
   let body = content.replace(/^["']|["']$/g, '');
-  body = stripLeadingOpening(body);
+  body = stripLeadingOpening(body, finalName);
   body = replaceNamePlaceholder(body, finalName);
   if (!body) body = 'שנה טובה! 🎂';
 
   const isGenericFallback = finalName === 'חבר/ה' || finalName === 'נשמה';
-  let displayName: string;
-  if (!isGenericFallback && isValidName(finalName)) {
-    const llmSaysValid = await validateNameWithLLM(client, finalName, model);
-    displayName = llmSaysValid ? finalName : 'נשמה';
-    if (!llmSaysValid) {
-      logger.debug('LLM rejected name, using נשמה', { name: finalName });
-    }
-  } else {
-    displayName = 'נשמה';
-  }
+  // Use the name if it passes the rule-based check (isValidName filters generic terms + short strings).
+  // We removed the LLM name validation because gpt-4o-mini rejects valid Hebrew names like דנה, יוסי, etc.
+  const displayName = (!isGenericFallback && isValidName(finalName)) ? finalName : 'נשמה';
 
   const message = buildStructuredMessage(displayName, body);
   const hasHebrew = /[\u0590-\u05FF]/.test(message);
@@ -196,10 +199,16 @@ export async function generateBirthdayMessage(
     .replace(/^\+?\d{10,}$/, '')
     .trim();
   const finalName = cleanName || 'חבר/ה';
-  const userPrompt = GENERATION_USER_PROMPT.replace('{name}', finalName);
 
-  const generateOnce = () =>
-    generateOneAttempt(client, finalName, userPrompt, model, name);
+  const generateOnce = () => {
+    // Pick a fresh random theme for each attempt to maximize diversity
+    const theme = pickRandomTheme();
+    const userPrompt = GENERATION_USER_PROMPT
+      .replace('{name}', finalName)
+      .replace('{theme}', theme);
+    logger.debug('Generation attempt with theme', { theme });
+    return generateOneAttempt(client, finalName, userPrompt, model, name);
+  };
   const validate = (result: GeneratedMessage) =>
     validateBlessingWithLLM(client, result.message, model);
 
