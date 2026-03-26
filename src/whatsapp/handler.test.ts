@@ -37,6 +37,13 @@ vi.mock('../utils/delay.js', () => ({
   randomDelay: vi.fn(() => Promise.resolve()),
 }));
 
+vi.mock('fs', () => ({
+  existsSync: vi.fn(() => false),
+  readFileSync: vi.fn(),
+  writeFileSync: vi.fn(),
+  mkdirSync: vi.fn(),
+}));
+
 describe('sendBirthdayMessage – do not send when generation/validation fails', () => {
   beforeEach(() => {
     sendMessageMock.mockClear();
@@ -46,5 +53,40 @@ describe('sendBirthdayMessage – do not send when generation/validation fails',
     const { sendBirthdayMessage } = await import('./handler.js');
     await sendBirthdayMessage('group-123', 'TestName');
     expect(sendMessageMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('handleMessage – regex fallback on initial birthday path', () => {
+  it('uses regex-extracted name when classifier returns no name (instead of pending state)', async () => {
+    vi.resetModules();
+
+    const aiMod = await import('../ai/index.js');
+    const configMod = await import('../config.js');
+
+    vi.mocked(aiMod.mightBeBirthdayMessage).mockReturnValue(true);
+    vi.mocked(aiMod.classifyMessage).mockResolvedValue({
+      isBirthday: true,
+      isInitialWish: true,
+      confidence: 0.95,
+      birthdayPersonName: null,
+    } as any);
+    const genMock = vi.mocked(aiMod.generateBirthdayMessage);
+    genMock.mockClear();
+    genMock.mockResolvedValue({
+      message: 'מזל טוב! דנה test message\n\ndisclaimer',
+    } as any);
+
+    (configMod.config as any).targetGroupId = 'test-group@g.us';
+    (configMod.config as any).confidenceThreshold = 0.8;
+
+    const { handleMessage } = await import('./handler.js');
+
+    await handleMessage({
+      key: { remoteJid: 'test-group@g.us', fromMe: false },
+      message: { conversation: 'מזל טוב לדנה!' },
+    } as any);
+
+    // Should call generateBirthdayMessage with regex-extracted "דנה", NOT enter pending state
+    expect(genMock).toHaveBeenCalledWith('דנה', expect.anything(), expect.anything());
   });
 });
