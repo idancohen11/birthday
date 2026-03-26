@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { GeneratedMessage } from './types.js';
-import { GENERATION_SYSTEM_PROMPT, GENERATION_USER_PROMPT, BIRTHDAY_DISCLAIMER } from './prompts.js';
+import { GENERATION_SYSTEM_PROMPT, GENERATION_USER_PROMPT, BIRTHDAY_DISCLAIMER, getGenerationUserPrompt } from './prompts.js';
+import type { Gender } from '../utils/genderMap.js';
 import { logger } from '../utils/logger.js';
 import { isValidName } from '../utils/nameExtractor.js';
 
@@ -187,6 +188,7 @@ export async function generateBirthdayMessage(
   name: string,
   apiKey: string,
   model: string = 'gpt-4o-mini',
+  gender: Gender = 'neutral',
   _preferredLanguage: 'he' | 'en' | 'mixed' = 'he'
 ): Promise<GeneratedMessage> {
   const client = getClient(apiKey);
@@ -196,7 +198,7 @@ export async function generateBirthdayMessage(
     .replace(/^\+?\d{10,}$/, '')
     .trim();
   const finalName = cleanName || 'חבר/ה';
-  const userPrompt = GENERATION_USER_PROMPT.replace('{name}', finalName);
+  const userPrompt = getGenerationUserPrompt(finalName, gender);
 
   const generateOnce = () =>
     generateOneAttempt(client, finalName, userPrompt, model, name);

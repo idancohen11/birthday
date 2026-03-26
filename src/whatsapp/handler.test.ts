@@ -86,7 +86,41 @@ describe('handleMessage – regex fallback on initial birthday path', () => {
       message: { conversation: 'מזל טוב לדנה!' },
     } as any);
 
-    // Should call generateBirthdayMessage with regex-extracted "דנה", NOT enter pending state
-    expect(genMock).toHaveBeenCalledWith('דנה', expect.anything(), expect.anything());
+    // Should call generateBirthdayMessage with regex-extracted "דנה" and resolved gender
+    expect(genMock).toHaveBeenCalledWith('דנה', expect.anything(), expect.anything(), 'female');
+  });
+});
+
+describe('sendBirthdayMessage passes gender to generator', () => {
+  it('calls generateBirthdayMessage with resolved gender for known names', async () => {
+    vi.resetModules();
+
+    const aiMod = await import('../ai/index.js');
+    const genMock = vi.mocked(aiMod.generateBirthdayMessage);
+    genMock.mockClear();
+    genMock.mockResolvedValue({
+      message: 'מזל טוב! עידן test message\n\ndisclaimer',
+    } as any);
+
+    const { sendBirthdayMessage } = await import('./handler.js');
+    await sendBirthdayMessage('group-123', 'עידן');
+
+    expect(genMock).toHaveBeenCalledWith('עידן', expect.anything(), expect.anything(), 'male');
+  });
+
+  it('resolves neutral for unknown names', async () => {
+    vi.resetModules();
+
+    const aiMod = await import('../ai/index.js');
+    const genMock = vi.mocked(aiMod.generateBirthdayMessage);
+    genMock.mockClear();
+    genMock.mockResolvedValue({
+      message: 'מזל טוב נשמה! test message\n\ndisclaimer',
+    } as any);
+
+    const { sendBirthdayMessage } = await import('./handler.js');
+    await sendBirthdayMessage('group-123', 'נשמה');
+
+    expect(genMock).toHaveBeenCalledWith('נשמה', expect.anything(), expect.anything(), 'neutral');
   });
 });

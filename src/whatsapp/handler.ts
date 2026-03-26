@@ -10,6 +10,7 @@ import {
 } from '../ai/index.js';
 import { randomDelay } from '../utils/delay.js';
 import { extractNameFromMazalTov, isValidName, GENERIC_TERMS } from '../utils/nameExtractor.js';
+import { resolveGender } from '../utils/genderMap.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -190,14 +191,16 @@ export async function sendBirthdayMessage(groupId: string, name: string): Promis
     return;
   }
 
-  console.log(`🎉 Sending birthday message for "${name}"...`);
+  const gender = resolveGender(name);
+  console.log(`🎉 Sending birthday message for "${name}" (gender: ${gender})...`);
 
   let generated;
   try {
     generated = await generateBirthdayMessage(
       name,
       config.openaiApiKey,
-      config.generationModel
+      config.generationModel,
+      gender
     );
   } catch (error) {
     if (error instanceof BlessingValidationFailedError) {
