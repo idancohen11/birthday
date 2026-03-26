@@ -8,6 +8,7 @@ import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import { config } from '../config.js';
 import { generateBirthdayMessage, replaceNamePlaceholder } from '../ai/generator.js';
+import { resolveGender } from '../utils/genderMap.js';
 
 const name = process.argv[2];
 
@@ -50,11 +51,13 @@ async function main() {
 
       try {
         // Generate the birthday message
-        console.log('🤖 Generating birthday message...');
+        const gender = resolveGender(name);
+        console.log(`🤖 Generating birthday message (gender: ${gender})...`);
         const generated = await generateBirthdayMessage(
           name,
           config.openaiApiKey,
-          config.generationModel
+          config.generationModel,
+          gender
         );
 
         const messageToSend = replaceNamePlaceholder(generated.message, name);

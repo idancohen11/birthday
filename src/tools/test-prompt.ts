@@ -16,6 +16,7 @@
 
 import readline from 'readline';
 import { classifyMessage, mightBeBirthdayMessage, generateBirthdayMessage } from '../ai/index.js';
+import { resolveGender } from '../utils/genderMap.js';
 import { testMessages } from './test-fixtures.js';
 
 // Load environment variables
@@ -90,8 +91,9 @@ async function testClassification(message: string, context?: string[]) {
     console.log('\n🎉 This is a valid initial birthday wish!');
     console.log('   Generating response...\n');
     
-    const response = await generateBirthdayMessage(result.birthdayPersonName, OPENAI_API_KEY!);
-    console.log(`💬 Would respond: "${response.message}"`);
+    const gender = resolveGender(result.birthdayPersonName);
+    const response = await generateBirthdayMessage(result.birthdayPersonName, OPENAI_API_KEY!, 'gpt-4o-mini', gender);
+    console.log(`💬 Would respond (${gender}): "${response.message}"`);
     console.log(`   Language: ${response.language}`);
   }
   
@@ -99,11 +101,12 @@ async function testClassification(message: string, context?: string[]) {
 }
 
 async function testGeneration(name: string) {
-  console.log(`\n🎁 Generating birthday wishes for "${name}"...\n`);
-  
+  const gender = resolveGender(name);
+  console.log(`\n🎁 Generating birthday wishes for "${name}" (gender: ${gender})...\n`);
+
   // Generate a few variations
   for (let i = 0; i < 3; i++) {
-    const response = await generateBirthdayMessage(name, OPENAI_API_KEY!);
+    const response = await generateBirthdayMessage(name, OPENAI_API_KEY!, 'gpt-4o-mini', gender);
     console.log(`   ${i + 1}. "${response.message}" (${response.language})`);
   }
 }
