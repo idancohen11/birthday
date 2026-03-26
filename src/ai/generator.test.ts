@@ -7,7 +7,7 @@ import {
   BlessingValidationFailedError,
   MAX_VALIDATION_ATTEMPTS,
 } from './generator.js';
-import { BIRTHDAY_DISCLAIMER } from './prompts.js';
+import { BIRTHDAY_DISCLAIMER, getGenerationUserPrompt } from './prompts.js';
 
 describe('replaceNamePlaceholder', () => {
   it('replaces {name} with actual name', () => {
@@ -109,6 +109,30 @@ describe('Production bugs – must not regress', () => {
     expect(withName).toMatch(/^מזל טוב! Hen /);
     const noName = buildStructuredMessage('נשמה', 'שנה טובה 🎂');
     expect(noName).toMatch(/^מזל טוב נשמה! /);
+  });
+});
+
+describe('getGenerationUserPrompt', () => {
+  it('includes "מין: זכר" for male', () => {
+    expect(getGenerationUserPrompt('עידן', 'male')).toContain('מין: זכר');
+  });
+
+  it('includes "מין: נקבה" for female', () => {
+    expect(getGenerationUserPrompt('דנה', 'female')).toContain('מין: נקבה');
+  });
+
+  it('includes "מין: ניטרלי" for neutral', () => {
+    expect(getGenerationUserPrompt('אור', 'neutral')).toContain('מין: ניטרלי');
+  });
+
+  it('includes the name in the prompt', () => {
+    expect(getGenerationUserPrompt('דנה', 'female')).toContain('דנה');
+  });
+
+  it('contains core instruction text', () => {
+    const prompt = getGenerationUserPrompt('עידן', 'male');
+    expect(prompt).toContain('כתוב רק את גוף ברכת יום הולדת');
+    expect(prompt).toContain('כתוב רק את גוף הברכה, בלי הסברים');
   });
 });
 
