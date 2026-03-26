@@ -67,6 +67,85 @@ describe('extractNameFromMazalTov', () => {
     });
   });
 
+  describe('Hebrew names starting with ל', () => {
+    it('should extract לילך from "מזל טוב לילך" (ל is part of name)', () => {
+      expect(extractNameFromMazalTov('מזל טוב לילך')).toBe('לילך');
+    });
+
+    it('should extract לילך from "מזל טוב ללילך" (first ל is preposition)', () => {
+      expect(extractNameFromMazalTov('מזל טוב ללילך')).toBe('לילך');
+    });
+
+    it('should extract לאה from "מזל טוב לאה" (ל is part of name)', () => {
+      expect(extractNameFromMazalTov('מזל טוב לאה')).toBe('לאה');
+    });
+
+    it('should extract לאה from "מזל טוב ללאה" (first ל is preposition)', () => {
+      expect(extractNameFromMazalTov('מזל טוב ללאה')).toBe('לאה');
+    });
+
+    it('should extract ליאת from "מזל טוב ליאת"', () => {
+      expect(extractNameFromMazalTov('מזל טוב ליאת')).toBe('ליאת');
+    });
+
+    it('should extract לידור from "מזל טוב לידור"', () => {
+      expect(extractNameFromMazalTov('מזל טוב לידור')).toBe('לידור');
+    });
+
+    it('should extract לידור from "מזל טוב ללידור" (preposition + lamed name)', () => {
+      expect(extractNameFromMazalTov('מזל טוב ללידור')).toBe('לידור');
+    });
+
+    it('should extract לאורה from "מזל טוב לאורה"', () => {
+      expect(extractNameFromMazalTov('מזל טוב לאורה')).toBe('לאורה');
+    });
+
+    it('should extract ליעד from "מזל טוב ליעד"', () => {
+      expect(extractNameFromMazalTov('מזל טוב ליעד')).toBe('ליעד');
+    });
+
+    it('should extract לילך from "המון מזל טוב לילך"', () => {
+      expect(extractNameFromMazalTov('המון מזל טוב לילך')).toBe('לילך');
+    });
+
+    it('should extract לילך from "המון מזל טוב ללילך"', () => {
+      expect(extractNameFromMazalTov('המון מזל טוב ללילך')).toBe('לילך');
+    });
+  });
+
+  describe('Parity: with and without ל preposition', () => {
+    it('regular name: "מזל טוב דנה" and "מזל טוב לדנה" both extract דנה', () => {
+      expect(extractNameFromMazalTov('מזל טוב דנה')).toBe('דנה');
+      expect(extractNameFromMazalTov('מזל טוב לדנה')).toBe('דנה');
+    });
+
+    it('regular name with המון: "המון מזל טוב דנה" and "המון מזל טוב לדנה"', () => {
+      expect(extractNameFromMazalTov('המון מזל טוב דנה')).toBe('דנה');
+      expect(extractNameFromMazalTov('המון מזל טוב לדנה')).toBe('דנה');
+    });
+
+    it('lamed name: "מזל טוב לילך" and "מזל טוב ללילך" both extract לילך', () => {
+      expect(extractNameFromMazalTov('מזל טוב לילך')).toBe('לילך');
+      expect(extractNameFromMazalTov('מזל טוב ללילך')).toBe('לילך');
+    });
+
+    it('lamed name: "מזל טוב לאה" and "מזל טוב ללאה" both extract לאה', () => {
+      expect(extractNameFromMazalTov('מזל טוב לאה')).toBe('לאה');
+      expect(extractNameFromMazalTov('מזל טוב ללאה')).toBe('לאה');
+    });
+  });
+
+  describe('LAMED_NAMES set coverage', () => {
+    it('should restore ל for key names: לידור, לאורה, ליעד, לוטם, לביא', () => {
+      // These names would have their ל stripped by the regex, but LAMED_NAMES restores it
+      expect(extractNameFromMazalTov('מזל טוב לידור')).toBe('לידור');
+      expect(extractNameFromMazalTov('מזל טוב לאורה')).toBe('לאורה');
+      expect(extractNameFromMazalTov('מזל טוב ליעד')).toBe('ליעד');
+      expect(extractNameFromMazalTov('מזל טוב לוטם')).toBe('לוטם');
+      expect(extractNameFromMazalTov('מזל טוב לביא')).toBe('לביא');
+    });
+  });
+
   describe('real-world examples from logs', () => {
     it('should extract name from Velena birthday case', () => {
       // This was the actual message that was missed
