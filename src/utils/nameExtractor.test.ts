@@ -117,15 +117,59 @@ describe('extractNameFromMazalTov', () => {
     });
   });
 
+  describe('Hebrew names starting with ל (lamed)', () => {
+    it('should preserve לילך and not strip the ל', () => {
+      expect(extractNameFromMazalTov('מזל טוב לילך אהובה 🥰')).toBe('לילך');
+    });
+
+    it('should preserve ליאור and not strip the ל', () => {
+      expect(extractNameFromMazalTov('מזל טוב ליאור!')).toBe('ליאור');
+    });
+
+    it('should preserve ליאת and not strip the ל', () => {
+      expect(extractNameFromMazalTov('מזל טוב ליאת 🎂')).toBe('ליאת');
+    });
+
+    it('should still strip ל prefix for non-lamed names', () => {
+      expect(extractNameFromMazalTov('מזל טוב לדנה!')).toBe('דנה');
+      expect(extractNameFromMazalTov('מזל טוב ליוסי')).toBe('יוסי');
+      expect(extractNameFromMazalTov('מזל טוב לעידן')).toBe('עידן');
+    });
+  });
+
+  describe('@mention after birthday phrase', () => {
+    it('should extract from "מזל טוב ל @Name"', () => {
+      expect(extractNameFromMazalTov('מזל טוב ל @Lilach Vardy !! 🎂')).toBe('Lilach');
+    });
+
+    it('should extract from "מזל טוב ל@Name"', () => {
+      expect(extractNameFromMazalTov('מזל טוב ל@David!')).toBe('David');
+    });
+
+    it('should extract Hebrew @mention after birthday phrase', () => {
+      expect(extractNameFromMazalTov('מזל טוב ל @לילך !!')).toBe('לילך');
+    });
+
+    it('should ignore phone number @mentions after birthday phrase', () => {
+      expect(extractNameFromMazalTov('מזל טוב ל @972501234567 !!')).toBeNull();
+    });
+  });
+
   describe('real-world examples from logs', () => {
     it('should extract name from Velena birthday case', () => {
-      // This was the actual message that was missed
       expect(extractNameFromMazalTov('מזל טוב ונטה 🎂🥳🎁🎈')).toBe('ונטה');
     });
 
     it('should extract name from Jacobo baby congratulation (but this is not birthday)', () => {
-      // This should extract חקובו, but the handler should filter it as non-birthday
       expect(extractNameFromMazalTov('מזל טוב חקובו!! 😍😍😍🥳🥳🥳')).toBe('חקובו');
+    });
+
+    it('should extract Lilach from real message with @mention', () => {
+      expect(extractNameFromMazalTov('בוקר טיל לכולם ומזל טוב ל @Lilach Vardy !! מלא אושר')).toBe('Lilach');
+    });
+
+    it('should extract לילך from follow-up message', () => {
+      expect(extractNameFromMazalTov('מזל טוב לילך אהובה 🥰')).toBe('לילך');
     });
   });
 });
