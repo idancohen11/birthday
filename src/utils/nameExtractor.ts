@@ -7,42 +7,31 @@
 export const GENERIC_TERMS = ['נשמה', 'חבר', 'חברה', 'יקיר', 'יקירה', 'מלך', 'מלכה', 'גבר', 'אח', 'אחי'];
 
 /**
- * Try to extract a name from birthday message patterns using regex.
- * This is a fallback when AI classification fails due to context pollution.
- * Covers: "מזל טוב X", "יום הולדת שמח X", "@X מזל טוב", "happy birthday X"
+ * Try to extract a name from "מזל טוב X" patterns using simple regex
+ * This is a fallback when AI classification fails due to context pollution
  */
 export function extractNameFromMazalTov(message: string): string | null {
+  // Patterns to match "מזל טוב [name]" in various forms
+  // Note: patterns with ל prefix need to NOT capture the ל
   const patterns = [
-    // "המון מזל טוב" patterns (most specific first)
-    /המון\s+מזל\s*טוב\s+ל([א-ת]+)/i,
-    /המון\s+מזל\s*טוב\s+([א-ת]+)/i,
-    // "מזל טוב" patterns
-    /מזל\s*טוב\s+ל([א-ת]+)/i,
-    /מזל\s*טוב\s+([א-ת]+)/i,
-    /מזל\s*טוב\s+([A-Za-z]+)/i,
-    // "יום הולדת שמח" patterns
-    /יום\s*הולדת\s*שמח\s+ל([א-ת]+)/i,
-    /יום\s*הולדת\s*שמח\s+([א-ת]+)/i,
-    /יום\s*הולדת\s*שמח\s+([A-Za-z]+)/i,
-    // @mention patterns: @Name followed by birthday phrase
-    /@([א-ת]{2,})\s+(?:מזל\s*טוב|יום\s*הולדת)/i,
-    /@([A-Za-z]{2,})\s+(?:מזל\s*טוב|יום\s*הולדת|happy\s*birthday)/i,
-    // "happy birthday" patterns
-    /happy\s+birthday\s+([A-Za-z]+)/i,
-    /happy\s+birthday\s+([א-ת]+)/i,
+    /המון\s+מזל\s*טוב\s+ל([א-ת]+)/i,  // המון מזל טוב לשם (check first - more specific)
+    /המון\s+מזל\s*טוב\s+([א-ת]+)/i,   // המון מזל טוב שם
+    /מזל\s*טוב\s+ל([א-ת]+)/i,         // מזל טוב לשם  
+    /מזל\s*טוב\s+([א-ת]+)/i,          // מזל טוב שם (most generic Hebrew - check last)
+    /מזל\s*טוב\s+([A-Za-z]+)/i,       // מזל טוב Name
   ];
-
+  
   for (const pattern of patterns) {
     const match = message.match(pattern);
     if (match && match[1]) {
       const name = match[1].trim();
-      // Filter out very short names (likely not real names), generic terms, and phone numbers
-      if (name.length >= 2 && !GENERIC_TERMS.includes(name) && !/^\+?\d+$/.test(name)) {
+      // Filter out very short names (likely not real names) and generic terms
+      if (name.length >= 2 && !GENERIC_TERMS.includes(name)) {
         return name;
       }
     }
   }
-
+  
   return null;
 }
 
