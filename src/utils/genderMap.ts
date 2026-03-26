@@ -97,3 +97,7 @@ const GENDER_MAP: ReadonlyMap<string, Gender> = new Map([
 export function resolveGender(name: string): Gender {
   return GENDER_MAP.get(name.trim()) ?? 'neutral';
 }
+
+export function isKnownName(name: string): boolean {
+  return GENDER_MAP.has(name.trim());
+}

@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import { GeneratedMessage } from './types.js';
 import { GENERATION_SYSTEM_PROMPT, GENERATION_USER_PROMPT, BIRTHDAY_DISCLAIMER, getGenerationUserPrompt } from './prompts.js';
-import type { Gender } from '../utils/genderMap.js';
+import { type Gender, isKnownName } from '../utils/genderMap.js';
 import { logger } from '../utils/logger.js';
 import { isValidName } from '../utils/nameExtractor.js';
 
@@ -14,43 +14,15 @@ export function replaceNamePlaceholder(text: string, name: string): string {
     .replace(/\[\s*שם\s*\]/g, name);
 }
 
-/** Ask LLM whether a string is a valid person's first name (Hebrew or English). Used to avoid putting invalid "names" in the message. */
-async function validateNameWithLLM(
-  client: OpenAI,
-  name: string,
-  model: string
-): Promise<boolean> {
-  try {
-    const response = await client.chat.completions.create({
-      model,
-      messages: [
-        {
-          role: 'user',
-          content: `Is "${name}" a valid Hebrew or English first name for a person (not a term of endearment like "sweetheart", not a common word)? Reply with exactly one word: yes or no.`,
-        },
-      ],
-      temperature: 0,
-      max_tokens: 10,
-    });
-    const answer = response.choices[0]?.message?.content?.trim().toLowerCase();
-    return answer === 'yes';
-  } catch (e) {
-    logger.warn('LLM name validation failed, falling back to rule-based only', { name, error: e });
-    return false;
-  }
-}
-
 const BLESSING_VALIDATION_PROMPT = `You are validating a birthday message (in Hebrew) that will be sent in a WhatsApp group.
 
-The message MUST:
-1. Be coherent and clear (readable, makes sense as a sentence or two).
-2. Be a proper birthday wish (congratulatory, appropriate for a birthday).
-3. Start with "מזל טוב!" followed by either:
-   - a real person's first name (Hebrew or English), OR
-   - the word "נשמה" (when the recipient's name is unknown).
-4. Then the rest of the blessing. It may end with a bot disclaimer – ignore that part for coherence.
+Answer "yes" if ALL of these are true:
+1. The text is readable and coherent Hebrew (a sentence or two).
+2. It starts with "מזל טוב".
+3. It is related to a birthday.
+4. It does not contain placeholders like {name} or [שם].
 
-Invalid examples: gibberish, offensive content, no name/nashama, placeholders like {name}, incoherent text, not a birthday wish.
+Ignore: the name after "מזל טוב" (already verified), any bot disclaimer at the end, occasional English words.
 
 Reply with exactly one word: yes or no.`;
 
@@ -78,7 +50,7 @@ async function validateBlessingWithLLM(
         { role: 'system', content: BLESSING_VALIDATION_PROMPT },
         {
           role: 'user',
-          content: `Is this birthday message valid?\n\n"""\n${fullMessage}\n"""`,
+          content: `Is this birthday message valid?\n\n"""\n${fullMessage.split('\n\nגילוי נאות')[0]}\n"""`,
         },
       ],
       temperature: 0,
@@ -164,16 +136,9 @@ async function generateOneAttempt(
   if (!body) body = 'שנה טובה! 🎂';
 
   const isGenericFallback = finalName === 'חבר/ה' || finalName === 'נשמה';
-  let displayName: string;
-  if (!isGenericFallback && isValidName(finalName)) {
-    const llmSaysValid = await validateNameWithLLM(client, finalName, model);
-    displayName = llmSaysValid ? finalName : 'נשמה';
-    if (!llmSaysValid) {
-      logger.debug('LLM rejected name, using נשמה', { name: finalName });
-    }
-  } else {
-    displayName = 'נשמה';
-  }
+  const displayName = (!isGenericFallback && (isKnownName(finalName) || isValidName(finalName)))
+    ? finalName
+    : 'נשמה';
 
   const message = buildStructuredMessage(displayName, body);
   const hasHebrew = /[\u0590-\u05FF]/.test(message);

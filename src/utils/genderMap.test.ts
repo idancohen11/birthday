@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveGender } from './genderMap.js';
+import { resolveGender, isKnownName } from './genderMap.js';
 
 describe('resolveGender', () => {
   it('returns female for known female names', () => {
@@ -33,5 +33,23 @@ describe('resolveGender', () => {
   it('trims whitespace before lookup', () => {
     expect(resolveGender('  דנה  ')).toBe('female');
     expect(resolveGender(' עידן ')).toBe('male');
+  });
+});
+
+describe('isKnownName', () => {
+  it('returns true for known team members', () => {
+    expect(isKnownName('דנה')).toBe(true);
+    expect(isKnownName('עידן')).toBe(true);
+    expect(isKnownName('אור')).toBe(true);
+  });
+
+  it('returns false for unknown names', () => {
+    expect(isKnownName('שלמה')).toBe(false);
+    expect(isKnownName('נשמה')).toBe(false);
+    expect(isKnownName('חבר/ה')).toBe(false);
+  });
+
+  it('trims whitespace', () => {
+    expect(isKnownName('  דנה  ')).toBe(true);
   });
 });
