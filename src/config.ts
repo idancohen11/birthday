@@ -31,7 +31,7 @@ export const config = {
   
   // AI Settings
   classificationModel: 'gpt-4o-mini',
-  generationModel: 'gpt-4o-mini',
+  generationModel: optionalEnv('GENERATION_MODEL', 'gpt-4o'),
   confidenceThreshold: 0.8,
 } as const;
 
